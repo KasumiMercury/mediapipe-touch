@@ -1,4 +1,5 @@
-import {useState} from 'react'
+import {useRef, useState} from 'react'
+import {FilesetResolver, HandLandmarker} from "@mediapipe/tasks-vision";
 
 function App() {
   const [cameraPermission, setCameraPermission] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle')
@@ -15,6 +16,82 @@ function App() {
       setCameraPermission('denied')
     }
   }
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const prepareVideoStreamWithVideoElements = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: true,
+    });
+
+    // video要素がまだなければ動的に作成
+    let video = videoRef.current;
+    if (!video) {
+      console.log("video create")
+      video = document.createElement('video');
+      video.style.display = 'none'; // 非表示
+      video.setAttribute('playsInline', '');
+      video.setAttribute('muted', '');
+      video.setAttribute('autoPlay', '');
+      document.body.appendChild(video);
+      videoRef.current = video;
+    }
+    video.srcObject = stream;
+    video.onloadeddata = () => {
+      process();
+    };
+
+    console.log(videoRef)
+  };
+
+  const process = async () => {
+
+    const vision = await FilesetResolver.forVisionTasks(
+        "node_modules/@mediapipe/tasks-vision/wasm"
+    )
+
+    const handLandmarker = await HandLandmarker.createFromOptions(
+        vision,
+        {
+          baseOptions: {
+            // https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker?hl=ja#models
+            // modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+            modelAssetPath: "../hand_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
+        }
+    )
+
+    const debugLoop = () => {
+      console.log("Running video stream...")
+
+      const video = videoRef.current;
+      if (!video) {
+        console.log("Video element not found")
+        return;
+      }
+
+      const result = handLandmarker.detectForVideo(video, performance.now());
+
+      if (!result) {
+        console.log("No result")
+        return
+      }
+
+      if (result.landmarks.length > 0) {
+        console.log("Landmarks:", result.landmarks)
+      }
+
+      requestAnimationFrame(() => {
+        debugLoop();
+      })
+    }
+
+    debugLoop()
+  };
 
   return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
