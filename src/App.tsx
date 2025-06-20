@@ -1,11 +1,13 @@
 import {useRef, useState, useEffect, useCallback} from 'react'
-import {FilesetResolver, HandLandmarker} from "@mediapipe/tasks-vision";
+import {FilesetResolver, GestureRecognizer, HandLandmarker} from "@mediapipe/tasks-vision";
 
 function App() {
   const [cameraPermission, setCameraPermission] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [processingMode, setProcessingMode] = useState<'hand' | 'gesture'>('hand')
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
+  const gestureRecognizerRef = useRef<GestureRecognizer | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const requestCameraAccess = async () => {
@@ -47,6 +49,32 @@ function App() {
     }
   }
 
+  const initializeGestureRecognizer = async () => {
+    try {
+      const vision = await FilesetResolver.forVisionTasks(
+        "/node_modules/@mediapipe/tasks-vision/wasm"
+      )
+
+      const gestureRecognizer = await GestureRecognizer.createFromOptions(
+        vision,
+        {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 2
+        }
+      )
+
+      gestureRecognizerRef.current = gestureRecognizer
+      return gestureRecognizer
+    } catch (error) {
+      console.error('Failed to initialize Gesture Recognizer:', error)
+      return null
+    }
+  }
+
   const startVideoStream = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -71,12 +99,12 @@ function App() {
     }
   }
 
-  const processVideoFrame = () => {
+  const processHandLandmarker = () => {
     const video = videoRef.current;
     const handLandmarker = handLandmarkerRef.current;
 
     if (!video || !handLandmarker || video.readyState !== 4) {
-      requestAnimationFrame(processVideoFrame);
+      requestAnimationFrame(processHandLandmarker);
       return;
     }
 
@@ -101,25 +129,67 @@ function App() {
       console.error('Error processing video frame:', error);
     }
 
-    requestAnimationFrame(processVideoFrame);
+    requestAnimationFrame(processHandLandmarker);
+  }
+
+  const processGestureRecognizer = () => {
+    const video = videoRef.current;
+    const gestureRecognizer = gestureRecognizerRef.current;
+
+    if (!video || !gestureRecognizer || video.readyState !== 4) {
+      requestAnimationFrame(processGestureRecognizer);
+      return;
+    }
+
+    try {
+      const startTimeMs = performance.now();
+      const result = gestureRecognizer.recognizeForVideo(video, startTimeMs);
+        if (result && result.gestures.length > 0) {
+            console.log(`Detected ${result.gestures.length} gestures:`, result.gestures);
+
+            result.gestures.forEach((gesture, index) => {
+            console.log(`Gesture ${index}:`, gesture);
+            });
+        }
+    } catch (error) {
+      console.error('Error processing video frame:', error);
+    }
+
+    requestAnimationFrame(processGestureRecognizer);
   }
 
   const startProcessing = async () => {
     setIsProcessing(true);
     
-    const handLandmarker = await initializeHandLandmarker();
-    if (!handLandmarker) {
-      setIsProcessing(false);
-      return;
-    }
+    if (processingMode === 'hand') {
+      const handLandmarker = await initializeHandLandmarker();
+      if (!handLandmarker) {
+        setIsProcessing(false);
+        return;
+      }
 
-    const stream = await startVideoStream();
-    if (!stream) {
-      setIsProcessing(false);
-      return;
-    }
+      const stream = await startVideoStream();
+      if (!stream) {
+        setIsProcessing(false);
+        return;
+      }
 
-    processVideoFrame();
+      processHandLandmarker();
+    } else {
+      const gestureRecognizer = await initializeGestureRecognizer();
+      if (!gestureRecognizer) {
+        setIsProcessing(false);
+        return;
+      }
+
+      const stream = await startVideoStream();
+      if (!stream) {
+        setIsProcessing(false);
+        return;
+      }
+
+      processGestureRecognizer();
+    }
   }
 
   const stopProcessing = useCallback(() => {
@@ -146,11 +216,8 @@ function App() {
       <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-6">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            MediaPipe Hand Tracking
+            MediaPipe Hand Tracking & Gesture Recognition
           </h1>
-          <p className="text-gray-600">
-            カメラを使用して手の検出を行います。
-          </p>
         </div>
 
         <div className="space-y-4">
@@ -176,13 +243,36 @@ function App() {
                 カメラアクセス許可済み
               </div>
               
+              <div className="flex gap-2 justify-center mb-4">
+                <button
+                  onClick={() => setProcessingMode('hand')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                    processingMode === 'hand' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  手のランドマーク
+                </button>
+                <button
+                  onClick={() => setProcessingMode('gesture')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                    processingMode === 'gesture' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  ジェスチャ認識
+                </button>
+              </div>
+              
               <div className="flex gap-4 justify-center">
                 {!isProcessing ? (
                   <button
                     onClick={startProcessing}
                     className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
                   >
-                    手の検出を開始
+                    {processingMode === 'hand' ? '手の検出を開始' : 'ジェスチャ認識を開始'}
                   </button>
                 ) : (
                   <button
@@ -196,7 +286,9 @@ function App() {
 
               {isProcessing && (
                 <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="text-blue-800 font-medium mb-2">処理中...</div>
+                  <div className="text-blue-800 font-medium mb-2">
+                    {processingMode === 'hand' ? '手のランドマーク検出中...' : 'ジェスチャ認識中...'}
+                  </div>
                 </div>
               )}
             </div>
