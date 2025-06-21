@@ -10,6 +10,10 @@ function App() {
   const gestureRecognizerRef = useRef<GestureRecognizer | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  const pointGesture = "Pointing_Up"
+  const gestureThreshold = 0.2
+  const indexFingerTip = 8
+
   const requestCameraAccess = async () => {
     setCameraPermission('requesting')
 
@@ -116,13 +120,7 @@ function App() {
         console.log(`Detected ${result.landmarks.length} hands:`, result.landmarks);
         
         result.landmarks.forEach((landmarks, handIndex) => {
-          console.log(`Hand ${handIndex}:`, {
-            thumbTip: landmarks[4],
-            indexTip: landmarks[8],
-            middleTip: landmarks[12],
-            ringTip: landmarks[16],
-            pinkyTip: landmarks[20]
-          });
+          console.log(`Detected Index Tip of ${handIndex}:`, landmarks[indexFingerTip]);
         });
       }
     } catch (error) {
@@ -145,11 +143,17 @@ function App() {
       const startTimeMs = performance.now();
       const result = gestureRecognizer.recognizeForVideo(video, startTimeMs);
         if (result && result.gestures.length > 0) {
-            console.log(`Detected ${result.gestures.length} gestures:`, result.gestures);
+          result.gestures.forEach((gesture, gestureIndex) => {
+            if (gesture[0].categoryName !== pointGesture) {
+                return;
+            }
 
-            result.gestures.forEach((gesture, index) => {
-            console.log(`Gesture ${index}:`, gesture);
-            });
+            if (gesture[0].score < gestureThreshold) {
+              return;
+            }
+
+            console.log(`Detected Index Tip of ${gestureIndex}:`, result.landmarks[gestureIndex][indexFingerTip]);
+          })
         }
     } catch (error) {
       console.error('Error processing video frame:', error);
