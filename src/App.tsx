@@ -6,7 +6,7 @@ function App() {
   const [cameraPermission, setCameraPermission] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle')
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingMode, setProcessingMode] = useState<'hand' | 'gesture'>('hand')
-  const [fingerPosition, setFingerPosition] = useState<{ x: number; y: number } | null>(null)
+  const [fingerPositions, setFingerPositions] = useState<{ [handIndex: number]: { x: number; y: number } }>({})
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const gestureRecognizerRef = useRef<GestureRecognizer | null>(null);
@@ -16,6 +16,7 @@ function App() {
   const gestureThreshold = 0.1
   const indexFingerTip = 8
   const verticalOffset = 0
+  const handColors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500']
 
   const requestCameraAccess = async () => {
     setCameraPermission('requesting')
@@ -143,18 +144,18 @@ function App() {
       const result = handLandmarker.detectForVideo(video, startTimeMs);
 
       if (result && result.landmarks.length > 0) {
-        console.log(`Detected ${result.landmarks.length} hands:`, result.landmarks);
-
-        result.landmarks.forEach((landmarks, _) => {
+        const newPositions: { [handIndex: number]: { x: number; y: number } } = {};
+        result.landmarks.forEach((landmarks, handIndex) => {
           // console.log(`Detected Index Tip of ${handIndex}:`, landmarks[indexFingerTip]);
           const indexTip = landmarks[indexFingerTip];
           if (indexTip) {
             const screenPos = convertToScreenPosition(indexTip.x, indexTip.y);
-            setFingerPosition(screenPos);
+            newPositions[handIndex] = screenPos;
           }
         });
+        setFingerPositions(newPositions);
       } else {
-        setFingerPosition(null);
+        setFingerPositions({});
       }
     } catch (error) {
       console.error('Error processing video frame:', error);
@@ -176,8 +177,8 @@ function App() {
       const startTimeMs = performance.now();
       const result = gestureRecognizer.recognizeForVideo(video, startTimeMs);
       if (result && result.gestures.length > 0) {
-        let hasValidGesture = false;
-        result.gestures.forEach((gesture, gestureIndex) => {
+        const newPositions: { [handIndex: number]: { x: number; y: number } } = {};
+        result.gestures.forEach((gesture, handIndex) => {
           if (gesture[0].categoryName !== pointGesture) {
             return;
           }
@@ -186,20 +187,16 @@ function App() {
             return;
           }
 
-          // console.log(`Detected Index Tip of ${gestureIndex}:`, result.landmarks[gestureIndex][indexFingerTip]);
-          const indexTip = result.landmarks[gestureIndex][indexFingerTip];
+          const indexTip = result.landmarks[handIndex][indexFingerTip];
           if (indexTip) {
             const screenPos = convertToScreenPosition(indexTip.x, indexTip.y);
-            setFingerPosition(screenPos);
-            hasValidGesture = true;
+            newPositions[handIndex] = screenPos;
           }
         })
 
-        if (!hasValidGesture) {
-          setFingerPosition(null);
-        }
+        setFingerPositions(newPositions);
       } else {
-        setFingerPosition(null);
+        setFingerPositions({});
       }
     } catch (error) {
       console.error('Error processing video frame:', error);
@@ -244,6 +241,7 @@ function App() {
 
   const stopProcessing = useCallback(() => {
     setIsProcessing(false);
+    setFingerPositions({});
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -371,16 +369,17 @@ function App() {
             />
           </div>
 
-          {fingerPosition && (
-              <div
-                  className="fixed w-6 h-6 bg-red-500 rounded-full pointer-events-none z-50 border-2 border-white shadow-lg"
-                  style={{
-                    left: fingerPosition.x - 12,
-                    top: fingerPosition.y - 12,
-                    transform: 'translate(0, 0)',
-                  }}
-              />
-          )}
+          {Object.entries(fingerPositions).map(([handIndex, position]) => (
+            <div
+              key={handIndex}
+              className={`fixed w-6 h-6 ${handColors[parseInt(handIndex) % handColors.length]} rounded-full pointer-events-none z-50 border-2 border-white shadow-lg`}
+              style={{
+                left: position.x - 12,
+                top: position.y - 12,
+                transform: 'translate(0, 0)',
+              }}
+            />
+          ))}
         </div>
       </>
   )
