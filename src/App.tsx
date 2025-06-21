@@ -16,6 +16,7 @@ function App() {
   const gestureThreshold = 0.1
   const indexFingerTip = 8
   const verticalOffset = 0
+  const detectionScale = 0.8
   const handColors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500']
 
   const requestCameraAccess = async () => {
@@ -113,22 +114,28 @@ function App() {
     const screenAspect = screenWidth / screenHeight;
     const videoAspect = 640 / 480;
 
+    const scaledX = (x - 0.5) / detectionScale + 0.5;
+    const scaledY = (y - 0.5) / detectionScale + 0.5;
+
+    if (scaledX < 0 || scaledX > 1 || scaledY < 0 || scaledY > 1) {
+      return null;
+    }
+
+    const flippedX = 1 - scaledX;
+
     let adjustedX: number;
     let adjustedY: number;
-
-    const flippedX = 1 - x;
 
     if (screenAspect > videoAspect) {
       const videoWidthOnScreen = screenHeight * videoAspect;
       adjustedX = (flippedX * videoWidthOnScreen) + (screenWidth - videoWidthOnScreen) / 2;
-      adjustedY = (y * screenHeight) + verticalOffset;
+      adjustedY = (scaledY * screenHeight) + verticalOffset;
     } else {
       const videoHeightOnScreen = screenWidth / videoAspect;
       adjustedX = flippedX * screenWidth;
-      adjustedY = (y * videoHeightOnScreen) + (screenHeight - videoHeightOnScreen) / 2 + verticalOffset;
+      adjustedY = (scaledY * videoHeightOnScreen) + (screenHeight - videoHeightOnScreen) / 2 + verticalOffset;
     }
 
-    console.log(adjustedX, adjustedY)
     return {x: adjustedX, y: adjustedY};
   }
 
@@ -152,7 +159,9 @@ function App() {
           const indexTip = landmarks[indexFingerTip];
           if (indexTip) {
             const screenPos = convertToScreenPosition(indexTip.x, indexTip.y);
-            newPositions[handIndex] = screenPos;
+            if (screenPos) {
+              newPositions[handIndex] = screenPos;
+            }
           }
         });
         setFingerPositions(newPositions);
@@ -192,7 +201,9 @@ function App() {
           const indexTip = result.landmarks[handIndex][indexFingerTip];
           if (indexTip) {
             const screenPos = convertToScreenPosition(indexTip.x, indexTip.y);
-            newPositions[handIndex] = screenPos;
+            if (screenPos) {
+              newPositions[handIndex] = screenPos;
+            }
           }
         })
 
