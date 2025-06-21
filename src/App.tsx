@@ -1,5 +1,5 @@
-import {useRef, useState, useEffect, useCallback} from 'react'
 import {FilesetResolver, GestureRecognizer, HandLandmarker} from "@mediapipe/tasks-vision";
+import {useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 
 function App() {
@@ -7,6 +7,12 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingMode, setProcessingMode] = useState<'hand' | 'gesture'>('hand')
   const [fingerPositions, setFingerPositions] = useState<{ [handIndex: number]: { x: number; y: number } }>({})
+  const [interactiveElements, setInteractiveElements] = useState<{id: string, isActive: boolean}[]>([
+    {id: 'element1', isActive: false},
+    {id: 'element2', isActive: false}
+  ])
+  const element1Ref = useRef<HTMLDivElement | null>(null)
+  const element2Ref = useRef<HTMLDivElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const gestureRecognizerRef = useRef<GestureRecognizer | null>(null);
@@ -133,6 +139,31 @@ function App() {
 
     return {x: adjustedX, y: adjustedY};
   }
+
+  const checkCollision = useCallback((fingerPos: {x: number, y: number}, element: HTMLDivElement) => {
+    const rect = element.getBoundingClientRect();
+    return fingerPos.x >= rect.left && 
+           fingerPos.x <= rect.right && 
+           fingerPos.y >= rect.top && 
+           fingerPos.y <= rect.bottom;
+  }, [])
+
+  useEffect(() => {
+    if (Object.keys(fingerPositions).length === 0) {
+      setInteractiveElements(prev => prev.map(el => ({...el, isActive: false})));
+      return;
+    }
+
+    const elements = [element1Ref.current, element2Ref.current];
+    
+    setInteractiveElements(prev => prev.map((el, index) => {
+      const element = elements[index];
+      if (!element) return el;
+      
+      const isActive = Object.values(fingerPositions).some(pos => checkCollision(pos, element));
+      return {...el, isActive};
+    }));
+  }, [fingerPositions, checkCollision])
 
   const processHandLandmarker = () => {
     const video = videoRef.current;
@@ -391,6 +422,25 @@ function App() {
               }}
             />
           ))}
+
+        <div className="fixed inset-0 pointer-events-none z-40">
+          <div 
+            ref={element1Ref}
+            className={`absolute w-32 h-32 ${interactiveElements[0]?.isActive ? 'bg-red-500' : 'bg-blue-500'} opacity-70 rounded-lg transition-colors duration-200`}
+            style={{
+              left: '20%',
+              top: '30%'
+            }}
+          />
+          <div 
+            ref={element2Ref}
+            className={`absolute w-32 h-32 ${interactiveElements[1]?.isActive ? 'bg-red-500' : 'bg-green-500'} opacity-70 rounded-lg transition-colors duration-200`}
+            style={{
+              right: '20%',
+              top: '50%'
+            }}
+          />
+        </div>
         </div>
       </>
   )
