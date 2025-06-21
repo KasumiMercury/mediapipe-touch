@@ -116,13 +116,15 @@ function App() {
     let adjustedX: number;
     let adjustedY: number;
 
+    const flippedX = 1 - x;
+
     if (screenAspect > videoAspect) {
       const videoWidthOnScreen = screenHeight * videoAspect;
-      adjustedX = (x * videoWidthOnScreen) + (screenWidth - videoWidthOnScreen) / 2;
+      adjustedX = (flippedX * videoWidthOnScreen) + (screenWidth - videoWidthOnScreen) / 2;
       adjustedY = (y * screenHeight) + verticalOffset;
     } else {
       const videoHeightOnScreen = screenWidth / videoAspect;
-      adjustedX = x * screenWidth;
+      adjustedX = flippedX * screenWidth;
       adjustedY = (y * videoHeightOnScreen) + (screenHeight - videoHeightOnScreen) / 2 + verticalOffset;
     }
 
@@ -362,7 +364,10 @@ function App() {
             <video
                 ref={videoRef}
                 className="mt-6 w-full max-w-md mx-auto rounded-lg"
-                style={{display: isProcessing ? 'block' : 'none'}}
+                style={{
+                  display: isProcessing ? 'block' : 'none',
+                  transform: 'scaleX(-1)'
+                }}
                 autoPlay
                 muted
                 playsInline
