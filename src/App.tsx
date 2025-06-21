@@ -114,8 +114,13 @@ function App() {
     const screenAspect = screenWidth / screenHeight;
     const videoAspect = 640 / 480;
 
-    const scaledX = (x - 0.5) / detectionScale + 0.5;
-    const scaledY = (y - 0.5) / detectionScale + 0.5;
+    const scaleRatio = screenAspect / videoAspect;
+    
+    const videoScaledX = x;
+    const videoScaledY = (y - 0.5) * scaleRatio + 0.5;
+
+    const scaledX = (videoScaledX - 0.5) / detectionScale + 0.5;
+    const scaledY = (videoScaledY - 0.5) / detectionScale + 0.5;
 
     if (scaledX < 0 || scaledX > 1 || scaledY < 0 || scaledY > 1) {
       return null;
@@ -123,18 +128,8 @@ function App() {
 
     const flippedX = 1 - scaledX;
 
-    let adjustedX: number;
-    let adjustedY: number;
-
-    if (screenAspect > videoAspect) {
-      const videoWidthOnScreen = screenHeight * videoAspect;
-      adjustedX = (flippedX * videoWidthOnScreen) + (screenWidth - videoWidthOnScreen) / 2;
-      adjustedY = (scaledY * screenHeight) + verticalOffset;
-    } else {
-      const videoHeightOnScreen = screenWidth / videoAspect;
-      adjustedX = flippedX * screenWidth;
-      adjustedY = (scaledY * videoHeightOnScreen) + verticalOffset;
-    }
+    const adjustedX = flippedX * screenWidth;
+    const adjustedY = scaledY * screenHeight + verticalOffset;
 
     return {x: adjustedX, y: adjustedY};
   }
