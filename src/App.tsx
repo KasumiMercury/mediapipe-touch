@@ -1,18 +1,21 @@
 import {useRef, useState, useEffect, useCallback} from 'react'
 import {FilesetResolver, GestureRecognizer, HandLandmarker} from "@mediapipe/tasks-vision";
+import './App.css'
 
 function App() {
   const [cameraPermission, setCameraPermission] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle')
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingMode, setProcessingMode] = useState<'hand' | 'gesture'>('hand')
+  const [fingerPosition, setFingerPosition] = useState<{ x: number; y: number } | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const gestureRecognizerRef = useRef<GestureRecognizer | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const pointGesture = "Pointing_Up"
-  const gestureThreshold = 0.2
+  const gestureThreshold = 0.1
   const indexFingerTip = 8
+  const verticalOffset = 0
 
   const requestCameraAccess = async () => {
     setCameraPermission('requesting')
@@ -30,19 +33,19 @@ function App() {
   const initializeHandLandmarker = async () => {
     try {
       const vision = await FilesetResolver.forVisionTasks(
-        "/node_modules/@mediapipe/tasks-vision/wasm"
+          "/node_modules/@mediapipe/tasks-vision/wasm"
       )
 
       const handLandmarker = await HandLandmarker.createFromOptions(
-        vision,
-        {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-            delegate: "GPU"
-          },
-          runningMode: "VIDEO",
-          numHands: 2
-        }
+          vision,
+          {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+              delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numHands: 2
+          }
       )
 
       handLandmarkerRef.current = handLandmarker
@@ -56,19 +59,19 @@ function App() {
   const initializeGestureRecognizer = async () => {
     try {
       const vision = await FilesetResolver.forVisionTasks(
-        "/node_modules/@mediapipe/tasks-vision/wasm"
+          "/node_modules/@mediapipe/tasks-vision/wasm"
       )
 
       const gestureRecognizer = await GestureRecognizer.createFromOptions(
-        vision,
-        {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-            delegate: "GPU"
-          },
-          runningMode: "VIDEO",
-          numHands: 2
-        }
+          vision,
+          {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+              delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numHands: 2
+          }
       )
 
       gestureRecognizerRef.current = gestureRecognizer
@@ -83,14 +86,14 @@ function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          width: {ideal: 640},
+          height: {ideal: 480},
           facingMode: 'user'
         }
       });
 
       streamRef.current = stream;
-      
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -101,6 +104,29 @@ function App() {
       console.error('Failed to start video stream:', error)
       return null
     }
+  }
+
+  const convertToScreenPosition = (x: number, y: number) => {
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    const screenAspect = screenWidth / screenHeight;
+    const videoAspect = 640 / 480;
+
+    let adjustedX: number;
+    let adjustedY: number;
+
+    if (screenAspect > videoAspect) {
+      const videoWidthOnScreen = screenHeight * videoAspect;
+      adjustedX = (x * videoWidthOnScreen) + (screenWidth - videoWidthOnScreen) / 2;
+      adjustedY = (y * screenHeight) + verticalOffset;
+    } else {
+      const videoHeightOnScreen = screenWidth / videoAspect;
+      adjustedX = x * screenWidth;
+      adjustedY = (y * videoHeightOnScreen) + (screenHeight - videoHeightOnScreen) / 2 + verticalOffset;
+    }
+
+    console.log(adjustedX, adjustedY)
+    return {x: adjustedX, y: adjustedY};
   }
 
   const processHandLandmarker = () => {
@@ -118,10 +144,17 @@ function App() {
 
       if (result && result.landmarks.length > 0) {
         console.log(`Detected ${result.landmarks.length} hands:`, result.landmarks);
-        
-        result.landmarks.forEach((landmarks, handIndex) => {
-          console.log(`Detected Index Tip of ${handIndex}:`, landmarks[indexFingerTip]);
+
+        result.landmarks.forEach((landmarks, _) => {
+          // console.log(`Detected Index Tip of ${handIndex}:`, landmarks[indexFingerTip]);
+          const indexTip = landmarks[indexFingerTip];
+          if (indexTip) {
+            const screenPos = convertToScreenPosition(indexTip.x, indexTip.y);
+            setFingerPosition(screenPos);
+          }
         });
+      } else {
+        setFingerPosition(null);
       }
     } catch (error) {
       console.error('Error processing video frame:', error);
@@ -142,19 +175,32 @@ function App() {
     try {
       const startTimeMs = performance.now();
       const result = gestureRecognizer.recognizeForVideo(video, startTimeMs);
-        if (result && result.gestures.length > 0) {
-          result.gestures.forEach((gesture, gestureIndex) => {
-            if (gesture[0].categoryName !== pointGesture) {
-                return;
-            }
+      if (result && result.gestures.length > 0) {
+        let hasValidGesture = false;
+        result.gestures.forEach((gesture, gestureIndex) => {
+          if (gesture[0].categoryName !== pointGesture) {
+            return;
+          }
 
-            if (gesture[0].score < gestureThreshold) {
-              return;
-            }
+          if (gesture[0].score < gestureThreshold) {
+            return;
+          }
 
-            console.log(`Detected Index Tip of ${gestureIndex}:`, result.landmarks[gestureIndex][indexFingerTip]);
-          })
+          // console.log(`Detected Index Tip of ${gestureIndex}:`, result.landmarks[gestureIndex][indexFingerTip]);
+          const indexTip = result.landmarks[gestureIndex][indexFingerTip];
+          if (indexTip) {
+            const screenPos = convertToScreenPosition(indexTip.x, indexTip.y);
+            setFingerPosition(screenPos);
+            hasValidGesture = true;
+          }
+        })
+
+        if (!hasValidGesture) {
+          setFingerPosition(null);
         }
+      } else {
+        setFingerPosition(null);
+      }
     } catch (error) {
       console.error('Error processing video frame:', error);
     }
@@ -164,7 +210,7 @@ function App() {
 
   const startProcessing = async () => {
     setIsProcessing(true);
-    
+
     if (processingMode === 'hand') {
       const handLandmarker = await initializeHandLandmarker();
       if (!handLandmarker) {
@@ -198,7 +244,7 @@ function App() {
 
   const stopProcessing = useCallback(() => {
     setIsProcessing(false);
-    
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -216,113 +262,127 @@ function App() {
   }, [stopProcessing]);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-6">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            MediaPipe Hand Tracking & Gesture Recognition
-          </h1>
-        </div>
-
-        <div className="space-y-4">
-          {cameraPermission === 'idle' && (
-            <button
-              onClick={requestCameraAccess}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200"
-            >
-              カメラアクセスを許可
-            </button>
-          )}
-
-          {cameraPermission === 'requesting' && (
-            <div className="w-full bg-gray-100 text-gray-600 font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2">
-              <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-blue-600"></div>
-              カメラアクセスを要求中...
+      <>
+        <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+          <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-6">
+            <div className="text-center mb-6">
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                MediaPipe Hand Tracking & Gesture Recognition
+              </h1>
             </div>
-          )}
 
-          {cameraPermission === 'granted' && (
             <div className="space-y-4">
-              <div className="w-full bg-green-100 text-green-800 font-medium py-3 px-4 rounded-lg text-center">
-                カメラアクセス許可済み
-              </div>
-              
-              <div className="flex gap-2 justify-center mb-4">
-                <button
-                  onClick={() => setProcessingMode('hand')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                    processingMode === 'hand' 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  手のランドマーク
-                </button>
-                <button
-                  onClick={() => setProcessingMode('gesture')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                    processingMode === 'gesture' 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  ジェスチャ認識
-                </button>
-              </div>
-              
-              <div className="flex gap-4 justify-center">
-                {!isProcessing ? (
+              {cameraPermission === 'idle' && (
                   <button
-                    onClick={startProcessing}
-                    className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                      onClick={requestCameraAccess}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200"
                   >
-                    {processingMode === 'hand' ? '手の検出を開始' : 'ジェスチャ認識を開始'}
+                    カメラアクセスを許可
                   </button>
-                ) : (
-                  <button
-                    onClick={stopProcessing}
-                    className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
-                  >
-                    検出を停止
-                  </button>
-                )}
-              </div>
+              )}
 
-              {isProcessing && (
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="text-blue-800 font-medium mb-2">
-                    {processingMode === 'hand' ? '手のランドマーク検出中...' : 'ジェスチャ認識中...'}
+              {cameraPermission === 'requesting' && (
+                  <div
+                      className="w-full bg-gray-100 text-gray-600 font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-blue-600"></div>
+                    カメラアクセスを要求中...
                   </div>
-                </div>
+              )}
+
+              {cameraPermission === 'granted' && (
+                  <div className="space-y-4">
+                    <div className="w-full bg-green-100 text-green-800 font-medium py-3 px-4 rounded-lg text-center">
+                      カメラアクセス許可済み
+                    </div>
+
+                    <div className="flex gap-2 justify-center mb-4">
+                      <button
+                          onClick={() => setProcessingMode('hand')}
+                          className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                              processingMode === 'hand'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                      >
+                        手のランドマーク
+                      </button>
+                      <button
+                          onClick={() => setProcessingMode('gesture')}
+                          className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                              processingMode === 'gesture'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                      >
+                        ジェスチャ認識
+                      </button>
+                    </div>
+
+                    <div className="flex gap-4 justify-center">
+                      {!isProcessing ? (
+                          <button
+                              onClick={startProcessing}
+                              className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                          >
+                            {processingMode === 'hand' ? '手の検出を開始' : 'ジェスチャ認識を開始'}
+                          </button>
+                      ) : (
+                          <button
+                              onClick={stopProcessing}
+                              className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                          >
+                            検出を停止
+                          </button>
+                      )}
+                    </div>
+
+                    {isProcessing && (
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <div className="text-blue-800 font-medium mb-2">
+                            {processingMode === 'hand' ? '手のランドマーク検出中...' : 'ジェスチャ認識中...'}
+                          </div>
+                        </div>
+                    )}
+                  </div>
+              )}
+
+              {cameraPermission === 'denied' && (
+                  <div className="space-y-3">
+                    <div className="w-full bg-red-100 text-red-800 font-medium py-3 px-4 rounded-lg text-center">
+                      カメラアクセスが拒否されました
+                    </div>
+                    <button
+                        onClick={requestCameraAccess}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200"
+                    >
+                      再試行
+                    </button>
+                  </div>
               )}
             </div>
-          )}
 
-          {cameraPermission === 'denied' && (
-            <div className="space-y-3">
-              <div className="w-full bg-red-100 text-red-800 font-medium py-3 px-4 rounded-lg text-center">
-                カメラアクセスが拒否されました
-              </div>
-              <button
-                onClick={requestCameraAccess}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200"
-              >
-                再試行
-              </button>
-            </div>
+            <video
+                ref={videoRef}
+                className="mt-6 w-full max-w-md mx-auto rounded-lg"
+                style={{display: isProcessing ? 'block' : 'none'}}
+                autoPlay
+                muted
+                playsInline
+            />
+          </div>
+
+          {fingerPosition && (
+              <div
+                  className="fixed w-6 h-6 bg-red-500 rounded-full pointer-events-none z-50 border-2 border-white shadow-lg"
+                  style={{
+                    left: fingerPosition.x - 12,
+                    top: fingerPosition.y - 12,
+                    transform: 'translate(0, 0)',
+                  }}
+              />
           )}
         </div>
-
-        <video
-          ref={videoRef}
-          className="mt-6 w-full max-w-md mx-auto rounded-lg"
-          style={{ display: isProcessing ? 'block' : 'none' }}
-          autoPlay
-          muted
-          playsInline
-        />
-      </div>
-    </div>
+      </>
   )
 }
 
