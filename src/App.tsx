@@ -133,7 +133,7 @@ function App() {
     } else {
       const videoHeightOnScreen = screenWidth / videoAspect;
       adjustedX = flippedX * screenWidth;
-      adjustedY = (scaledY * videoHeightOnScreen) + (screenHeight - videoHeightOnScreen) / 2 + verticalOffset;
+      adjustedY = (scaledY * videoHeightOnScreen) + verticalOffset;
     }
 
     return {x: adjustedX, y: adjustedY};
