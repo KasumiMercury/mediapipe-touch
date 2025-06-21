@@ -21,8 +21,8 @@ function App() {
   const pointGesture = "Pointing_Up"
   const gestureThreshold = 0.1
   const indexFingerTip = 8
-  const verticalOffset = 0
-  const detectionScale = 0.8
+  const verticalOffset = 0.1
+  const detectionScale = 0.9
   const handColors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500']
 
   const requestCameraAccess = async () => {
@@ -122,8 +122,10 @@ function App() {
 
     const scaleRatio = screenAspect / videoAspect;
     
+    const shiftedY = y + verticalOffset;
+    
     const videoScaledX = x;
-    const videoScaledY = (y - 0.5) * scaleRatio + 0.5;
+    const videoScaledY = (shiftedY - 0.5) * scaleRatio + 0.5;
 
     const scaledX = (videoScaledX - 0.5) / detectionScale + 0.5;
     const scaledY = (videoScaledY - 0.5) / detectionScale + 0.5;
@@ -135,7 +137,7 @@ function App() {
     const flippedX = 1 - scaledX;
 
     const adjustedX = flippedX * screenWidth;
-    const adjustedY = scaledY * screenHeight + verticalOffset;
+    const adjustedY = scaledY * screenHeight;
 
     return {x: adjustedX, y: adjustedY};
   }
